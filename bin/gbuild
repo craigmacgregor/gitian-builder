@@ -4,6 +4,7 @@ require 'optparse'
 require 'yaml'
 require 'fileutils'
 require 'pathname'
+require 'date'
 
 @options = {:num_procs => 2, :memory => 2000}
 
@@ -143,7 +144,15 @@ EOF" if build_desc["sudo"] and @options[:allow_sudo]
     build_desc["remotes"].each do |remote|
       dir = sanitize(remote["dir"], remote["dir"])
 
-      author_date = `cd inputs/#{dir} && git log --format=@%at -1 | date +"%F %T" -u -f -`.strip
+      if RUBY_PLATFORM.include? "darwin"
+        author_timestamp = `cd inputs/navcoin-core && git log --format=%at -1`
+        author_date = DateTime.strptime(author_timestamp, "%s").strftime("%Y-%m-%d %H:%M:%S").strip
+      elsif RUBY_PLATFORM.include? "linux"
+        author_date = `cd inputs/navcoin-core && git log --format=@%at -1 | date +"%F %T" -u -f -`.strip
+      else
+        raise "unsupported platform #{RUBY_PLATFORM}"
+      end
+
       raise "error looking up author date in #{dir}" unless $?.exitstatus == 0
 
       system! "copy-to-target #{@quiet_flag} inputs/#{dir} build/"
@@ -252,7 +261,14 @@ end
 
 ENV['DISTRO'] = distro
 
-desc_sum = `sha256sum #{build_desc_file}`
+if RUBY_PLATFORM.include? "darwin"
+  desc_sum = `shasum -a 256 #{build_desc_file}`
+elsif RUBY_PLATFORM.include? "linux"
+  desc_sum = `sha256sum #{build_desc_file}`
+else
+  raise "unsupported platform #{RUBY_PLATFORM}"
+end
+
 desc_sum = desc_sum.sub(build_desc_file, "#{package_name}-desc.yml")
 in_sums << desc_sum
 
